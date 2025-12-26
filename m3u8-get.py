@@ -44,6 +44,10 @@ TIMEOUT = int(os.getenv("TIMEOUT", "60"))  # 60 seconds default
 RETRY_COUNT = int(os.getenv("RETRY_COUNT", "3"))  # 3 attempts default
 MKVMERGE_PATH = os.getenv("MKVMERGE_PATH", "mkvmerge")  # Path to mkvmerge binary
 
+# Custom DNS servers (space-separated)
+DNS_SERVERS_STR = os.getenv("DNS_SERVERS", "").strip()
+DNS_SERVERS = DNS_SERVERS_STR.split() if DNS_SERVERS_STR else None
+
 # HTTP headers (same as original)
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:138.0) Gecko/20100101 Firefox/138.0",
@@ -161,6 +165,25 @@ def print_track_summary(tracks: List[Track]) -> None:
     print(f"   🎬 Video: {len(video)}")
     print(f"   🔊 Audio: {len(audio)}")
     print(f"   📝 Subtitles: {len(subs)}")
+
+
+def create_dns_resolver() -> Optional[aiohttp.AsyncResolver]:
+    """
+    Create a custom DNS resolver if DNS_SERVERS is configured.
+
+    Returns:
+        AsyncResolver if DNS servers are configured, None otherwise
+    """
+    if DNS_SERVERS:
+        try:
+            resolver = aiohttp.AsyncResolver(nameservers=DNS_SERVERS)
+            print(f"🌐 Using custom DNS servers: {', '.join(DNS_SERVERS)}")
+            return resolver
+        except Exception as e:
+            print(f"⚠️  Failed to create custom DNS resolver: {e}")
+            print(f"   Falling back to system DNS")
+            return None
+    return None
 
 
 # ============================================================================
@@ -639,8 +662,25 @@ async def fetch_and_parse_playlist(master_m3u_url: str) -> MasterPlaylist:
     Returns:
         Parsed MasterPlaylist object
     """
-    # Configure connector for the session
-    connector: TCPConnector = TCPConnector(limit=100, limit_per_host=30, ttl_dns_cache=300, keepalive_timeout=30)
+    # Create custom DNS resolver if configured
+    resolver = create_dns_resolver()
+
+    # Configure connector for the session with custom DNS if available
+    if resolver:
+        connector: TCPConnector = TCPConnector(
+            limit=100,
+            limit_per_host=30,
+            ttl_dns_cache=300,
+            keepalive_timeout=30,
+            resolver=resolver,
+        )
+    else:
+        connector = TCPConnector(
+            limit=100,
+            limit_per_host=30,
+            ttl_dns_cache=300,
+            keepalive_timeout=30,
+        )
 
     timeout_config: ClientTimeout = ClientTimeout(total=TIMEOUT)
 
@@ -661,8 +701,25 @@ async def download_selected_tracks(selected_tracks: List[Track], output_folder: 
     Returns:
         List of downloaded file paths
     """
-    # Configure connector for the session
-    connector: TCPConnector = TCPConnector(limit=100, limit_per_host=30, ttl_dns_cache=300, keepalive_timeout=30)
+    # Create custom DNS resolver if configured
+    resolver = create_dns_resolver()
+
+    # Configure connector for the session with custom DNS if available
+    if resolver:
+        connector: TCPConnector = TCPConnector(
+            limit=100,
+            limit_per_host=30,
+            ttl_dns_cache=300,
+            keepalive_timeout=30,
+            resolver=resolver,
+        )
+    else:
+        connector = TCPConnector(
+            limit=100,
+            limit_per_host=30,
+            ttl_dns_cache=300,
+            keepalive_timeout=30,
+        )
 
     timeout_config: ClientTimeout = ClientTimeout(total=TIMEOUT)
 
