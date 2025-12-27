@@ -8,6 +8,24 @@ Optimized asynchronous M3U8 downloader.
 - [uv](https://github.com/astral-sh/uv) (recommended for installation)
 - MKVToolNix (optional but highly recommended, for merging tracks)
 
+## How to Find the M3U8 URL
+
+Before using this tool, you need to find the M3U8 playlist URL from the website:
+
+1. **Open the webpage** that contains the video/media you want to download
+2. **Open your browser's Developer Tools**:
+   - Chrome/Edge: Press `F12` or `Ctrl+Shift+I` (Windows) / `Cmd+Option+I` (Mac)
+   - Firefox: Press `F12` or `Ctrl+Shift+K` (Windows) / `Cmd+Option+K` (Mac)
+3. **Go to the Network tab** in the Developer Tools
+4. **Refresh the page** and start playing the video
+5. **Filter the network requests** by typing `m3u8` in the filter box
+6. **Look for requests** ending in `.m3u8` - you'll typically see:
+   - A "master" playlist (contains multiple quality/bitrate options)
+   - Individual stream playlists
+7. **Right-click** on the `.m3u8` request and select "Copy > Copy URL" (or similar)
+
+> **Tip**: Usually, you want the "master" M3U8 URL (often called `master.m3u8` or similar) as it gives you access to all available quality options.
+
 ## Usage
 
 ### Basic Usage
