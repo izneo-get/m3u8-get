@@ -1,5 +1,21 @@
 # m3u8-get
 
+```text
+███╗   ███╗██████╗ ██╗   ██╗ █████╗
+████╗ ████║╚════██╗██║   ██║██╔══██╗
+██╔████╔██║ █████╔╝██║   ██║╚█████╔╝
+██║╚██╔╝██║ ╚═══██╗██║   ██║██╔══██╗
+██║ ╚═╝ ██║██████╔╝╚██████╔╝╚█████╔╝
+╚═╝     ╚═╝╚═════╝  ╚═════╝  ╚════╝
+
+       ██████╗ ███████╗████████╗    
+      ██╔════╝ ██╔════╝╚══██╔══╝    
+█████╗██║  ███╗█████╗     ██║
+╚════╝██║   ██║██╔══╝     ██║
+      ╚██████╔╝███████╗   ██║
+       ╚═════╝ ╚══════╝   ╚═╝
+```
+
 Optimized asynchronous M3U8 downloader.
 
 ## Requirements
@@ -28,7 +44,18 @@ Before using this tool, you need to find the M3U8 playlist URL from the website:
 
 ## Usage
 
-### Basic Usage
+### Interactive mode (no arguments)
+
+```bash
+uv run m3u8-get.py
+```
+
+The program will prompt you for:
+
+- The master M3U8 URL
+- The output filename (when merging)
+
+### Basic usage
 
 ```bash
 uv run python m3u8-get.py <MASTER_M3U_URL>
@@ -39,6 +66,13 @@ uv run python m3u8-get.py <MASTER_M3U_URL>
 ```bash
 uv run python m3u8-get.py <MASTER_M3U_URL> <OUTPUT_NAME>
 ```
+
+### Command-Line Arguments
+
+| Argument | Description                         | Required                              |
+| -------- | ----------------------------------- | ------------------------------------- |
+| `url`    | Master M3U8 playlist URL            | No (prompted if omitted)              |
+| `output` | Output filename (without extension) | No (prompted when merging if omitted) |
 
 ### Example
 
@@ -52,7 +86,7 @@ This will:
 2. Display available tracks (video, audio, subtitles)
 3. Let you interactively select the tracks you want
 4. Download all selected tracks in parallel
-5. Prompt you to merge tracks with FFmpeg
+5. Prompt you to merge tracks with mkvmerge
 
 ## Installation
 
@@ -71,6 +105,12 @@ cd m3u8-get
 uv sync
 ```
 
+## Build
+
+```bash
+uv run python -m nuitka --standalone --onefile --follow-imports --windows-icon-from-ico="./resources/icon.ico" --windows-console-mode=disable m3u8-get.py
+```
+
 ## Configuration
 
 Copy `.env.example` to `.env` and adjust the values:
@@ -81,19 +121,32 @@ cp .env.example .env
 
 ### Environment Variables
 
-| Variable                   | Description                         | Default          |
-| -------------------------- | ----------------------------------- | ---------------- |
-| `MAX_CONCURRENT_DOWNLOADS` | Maximum parallel downloads          | `32`             |
-| `CHUNK_SIZE`               | Chunk size for streaming (bytes)    | `1048576` (1 MB) |
-| `TIMEOUT`                  | HTTP request timeout (seconds)      | `60`             |
-| `RETRY_COUNT`              | Number of retry attempts on failure | `3`              |
-| `MKVMERGE_PATH`            | Path to mkvmerge binary             | `mkvmerge`       |
+| Variable                   | Description                          | Default          |
+| -------------------------- | ------------------------------------ | ---------------- |
+| `MAX_CONCURRENT_DOWNLOADS` | Maximum parallel downloads           | `32`             |
+| `CHUNK_SIZE`               | Chunk size for streaming (bytes)     | `1048576` (1 MB) |
+| `TIMEOUT`                  | HTTP request timeout (seconds)       | `60`             |
+| `RETRY_COUNT`              | Number of retry attempts on failure  | `3`              |
+| `MKVMERGE_PATH`            | Path to mkvmerge binary              | `mkvmerge`       |
+| `DNS_SERVERS`              | Custom DNS servers (space-separated) | System default   |
 
 ### Performance tuning
 
 - **Fast connection**: `MAX_CONCURRENT_DOWNLOADS=64`, `CHUNK_SIZE=4194304` (4 MB)
 - **Standard connection**: `MAX_CONCURRENT_DOWNLOADS=32`, `CHUNK_SIZE=1048576` (1 MB)
 - **Slow connection**: `MAX_CONCURRENT_DOWNLOADS=16`, `CHUNK_SIZE=1048576` (1 MB)
+
+### Custom DNS servers
+
+If you experience connection issues or slow downloads, you can use custom DNS servers:
+
+```.env
+# Google DNS
+DNS_SERVERS=8.8.8.8 8.8.4.4
+
+# Cloudflare DNS
+DNS_SERVERS=1.1.1.1 1.0.0.1
+```
 
 ## Troubleshooting
 

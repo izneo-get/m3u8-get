@@ -2,15 +2,9 @@
 __version__ = "0.1.0"
 """
 m3u8-get.py - Optimized asynchronous M3U8 downloader
-
-Async version of m3u8-get.py with:
-- Parallel downloads via aiohttp
-- tqdm progress bar
-- Configuration via .env
-- Error handling with retry logic
-- Interactive track selection with questionary
 """
 
+import argparse
 import asyncio
 import heapq
 import os
@@ -119,27 +113,42 @@ class MasterPlaylist:
 # ============================================================================
 
 
-def print_banner() -> None:
-    """Display the program banner."""
+def print_banner(latest_version: Optional[str] = None) -> None:
+    """
+    Display the program banner.
+
+    Args:
+        latest_version: Latest version string if available, None otherwise
+    """
     print(f"\n{'='*60}")
     print(
         """
-███╗   ███╗██████╗ ██╗   ██╗ █████╗ 
+███╗   ███╗██████╗ ██╗   ██╗ █████╗
 ████╗ ████║╚════██╗██║   ██║██╔══██╗
 ██╔████╔██║ █████╔╝██║   ██║╚█████╔╝
 ██║╚██╔╝██║ ╚═══██╗██║   ██║██╔══██╗
 ██║ ╚═╝ ██║██████╔╝╚██████╔╝╚█████╔╝
-╚═╝     ╚═╝╚═════╝  ╚═════╝  ╚════╝ 
-                                    
-       ██████╗ ███████╗████████╗    
-      ██╔════╝ ██╔════╝╚══██╔══╝    
-█████╗██║  ███╗█████╗     ██║       
-╚════╝██║   ██║██╔══╝     ██║       
-      ╚██████╔╝███████╗   ██║       
-       ╚═════╝ ╚══════╝   ╚═╝        
+╚═╝     ╚═╝╚═════╝  ╚═════╝  ╚════╝
+
+       ██████╗ ███████╗████████╗
+      ██╔════╝ ██╔════╝╚══██╔══╝
+█████╗██║  ███╗█████╗     ██║
+╚════╝██║   ██║██╔══╝     ██║
+      ╚██████╔╝███████╗   ██║
+       ╚═════╝ ╚══════╝   ╚═╝
 """
     )
-    print(f"  v{__version__}")
+
+    # Display version with update status
+    version_str = f"  v{__version__}"
+    if latest_version is None:
+        # Could not fetch latest version
+        pass
+    elif latest_version == __version__:
+        version_str += " (latest version)"
+    else:
+        version_str += f" (version {latest_version} available)"
+    print(version_str)
     print(f"{'='*60}")
     print(f"Configuration:")
     print(f"  - Parallel downloads: {MAX_CONCURRENT_DOWNLOADS}")
@@ -149,10 +158,33 @@ def print_banner() -> None:
     print(f"{'='*60}\n")
 
 
-def print_usage() -> None:
-    """Display program usage help."""
-    print("Usage: ")
-    print(f"{sys.argv[0]} <MASTER_M3U_URL> [OUTPUT_NAME]")
+async def get_latest_version() -> Optional[str]:
+    """
+    Fetch the latest version from GitHub repository.
+
+    Returns:
+        Latest version string if successful, None otherwise
+    """
+    url = "https://raw.githubusercontent.com/izneo-get/m3u8-get/refs/heads/master/pyproject.toml"
+    try:
+        timeout = ClientTimeout(total=5)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.get(url) as resp:
+                if resp.status == 200:
+                    content = await resp.text()
+                    # Parse version from pyproject.toml
+                    for line in content.split("\n"):
+                        line = line.strip()
+                        if line.startswith("version ="):
+                            # Extract version value (format: version = "0.1.0")
+                            version_part = line.split("=", 1)[1].strip()
+                            # Remove quotes
+                            version_part = version_part.strip('"').strip("'")
+                            return version_part
+    except Exception:
+        # Silent fail on network errors
+        pass
+    return None
 
 
 def print_track_summary(tracks: List[Track]) -> None:
@@ -764,7 +796,7 @@ def build_mkvmerge_command(
     Returns:
         Tuple of (mkvmerge command as list, output path)
     """
-    output_name: str = file_out_name if file_out_name else "output"
+    output_name: str = sanitize_filename(file_out_name) if file_out_name else "output"
     output_path: str = f"{output_folder}/{output_name}.mkv"
 
     # Build mkvmerge command
@@ -774,7 +806,35 @@ def build_mkvmerge_command(
     return mkvmerge_cmd, output_path
 
 
-def prompt_and_run_mkvmerge(downloaded_files: List[str], output_folder: str, file_out_name: str) -> None:
+def sanitize_filename(filename: str) -> str:
+    """
+    Sanitize filename by removing invalid characters.
+
+    Args:
+        filename: Raw filename
+
+    Returns:
+        Sanitized filename safe for use on Windows/Linux/macOS
+    """
+    # Invalid characters on Windows: < > : " / \ | ? *
+    # Invalid on Linux/macOS: /
+    # Also remove control characters
+    invalid_chars = r'[<>:"/\\|?*\x00-\x1f]'
+
+    # Replace invalid chars with underscore
+    sanitized = re.sub(invalid_chars, "_", filename)
+
+    # Remove leading/trailing spaces and dots
+    sanitized = sanitized.strip(". ")
+
+    # Ensure filename is not empty after sanitization
+    if not sanitized:
+        sanitized = "output"
+
+    return sanitized
+
+
+def prompt_and_run_mkvmerge(downloaded_files: List[str], output_folder: str, file_out_name: str = "") -> None:
     """
     Prompt user and run mkvmerge to merge tracks (synchronous).
 
@@ -783,6 +843,21 @@ def prompt_and_run_mkvmerge(downloaded_files: List[str], output_folder: str, fil
         output_folder: Output folder path
         file_out_name: Output filename prefix
     """
+    # Prompt for output filename if not provided
+    if not file_out_name:
+        file_out_name = questionary.text(
+            "📄 Please enter the output filename (without extension):",
+            default="output",
+            validate=lambda x: len(x) > 0 or "Filename cannot be empty",
+        ).ask()
+        if file_out_name is None:
+            print("\nCancelled.")
+            return
+
+    # Sanitize filename to remove invalid characters
+    file_out_name = sanitize_filename(file_out_name)
+    print(f"📝 Output filename: {file_out_name}.mkv")
+
     mkvmerge_cmd: List[str]
     output_path: str
     mkvmerge_cmd, output_path = build_mkvmerge_command(downloaded_files, output_folder, file_out_name)
@@ -827,18 +902,49 @@ def prompt_and_run_mkvmerge(downloaded_files: List[str], output_folder: str, fil
 # ============================================================================
 
 
+def parse_args() -> argparse.Namespace:
+    """Parse command line arguments."""
+    parser = argparse.ArgumentParser(
+        prog="m3u8-get",
+        description="Optimized asynchronous M3U8 downloader",
+    )
+    parser.add_argument(
+        "url",
+        nargs="?",
+        help="Master M3U8 playlist URL",
+    )
+    parser.add_argument(
+        "output",
+        nargs="?",
+        help="Output filename (without extension)",
+    )
+
+    return parser.parse_args()
+
+
 def main() -> None:
     """Program entry point."""
-    # Check arguments
-    if len(sys.argv) < 2:
-        print_usage()
-        sys.exit(1)
-
-    file_out_name: str = sys.argv[2] if len(sys.argv) > 2 else ""
-    master_m3u_url: str = sys.argv[1]
+    # Fetch latest version before displaying banner
+    latest_version = asyncio.run(get_latest_version())
 
     # Display banner
-    print_banner()
+    print_banner(latest_version)
+    args = parse_args()
+
+    # Get URL from argument or prompt user
+    if not args.url:
+        master_m3u_url: str = questionary.text(
+            "🔗 Please enter the master M3U8 URL:",
+            validate=lambda x: len(x) > 0 or "URL cannot be empty",
+        ).ask()
+        if master_m3u_url is None:
+            print("\nCancelled.")
+            sys.exit(1)
+    else:
+        master_m3u_url = args.url
+
+    # Get output filename from argument or leave empty for later prompt
+    file_out_name: str = sanitize_filename(args.output) if args.output else ""
 
     # Create tmp folder if necessary
     output_folder: str = f"{os.path.dirname(os.path.abspath(sys.argv[0]))}/tmp"

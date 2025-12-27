@@ -11,3 +11,8 @@ wheels/
 
 tmp/
 .env
+
+# Build
+*.build/
+*.dist/
+*.onefile-build/

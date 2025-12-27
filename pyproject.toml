@@ -11,3 +11,8 @@ dependencies = [
     "questionary>=2.1.1",
     "tqdm>=4.67.1",
 ]
+
+[dependency-groups]
+dev = [
+    "nuitka>=2.8.9",
+]
