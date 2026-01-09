@@ -958,19 +958,37 @@ def main() -> None:
         print_track_summary(playlist.tracks)
 
         if not playlist.tracks:
-            print("\n[ERROR] No tracks found in playlist!")
-            return
+            print("\n⚠️  No tracks found in playlist!")
+            # Offer to download the single track from the initial URL
+            download_single = questionary.confirm(
+                "Would you like to download the single track from the provided URL?", default=True
+            ).ask()
 
-        # Step 2: Interactive track selection (synchronous - questionary)
-        selected_tracks: List[Track] = select_tracks_interactive(playlist)
+            if not download_single:
+                print("\nCancelled.")
+                return
 
-        if not selected_tracks:
-            print("\nNo tracks selected. Exiting.")
-            return
+            # Create a single track with the initial URL
+            single_track = Track(
+                type="Unknown",
+                name="Single Track",
+                url=master_m3u_url,
+            )
+            selected_tracks = [single_track]
 
-        print(f"\n🎯 Selected {len(selected_tracks)} track(s):")
-        for track in selected_tracks:
-            print(f"   - {track}")
+            print(f"\n🎯 Selected 1 track:")
+            print(f"   - ❔ Unknown (single track)")
+        else:
+            # Step 2: Interactive track selection (synchronous - questionary)
+            selected_tracks: List[Track] = select_tracks_interactive(playlist)
+
+            if not selected_tracks:
+                print("\nNo tracks selected. Exiting.")
+                return
+
+            print(f"\n🎯 Selected {len(selected_tracks)} track(s):")
+            for track in selected_tracks:
+                print(f"   - {track}")
 
         # Step 3: Download tracks (async)
         downloaded_files: List[str] = asyncio.run(
