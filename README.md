@@ -67,12 +67,19 @@ uv run python m3u8-get.py <MASTER_M3U_URL>
 uv run python m3u8-get.py <MASTER_M3U_URL> <OUTPUT_NAME>
 ```
 
+### With custom headers
+
+```bash
+uv run python m3u8-get.py <MASTER_M3U_URL> <OUTPUT_NAME> --headers path/to/headers.json
+```
+
 ### Command-Line Arguments
 
-| Argument | Description                         | Required                              |
-| -------- | ----------------------------------- | ------------------------------------- |
-| `url`    | Master M3U8 playlist URL            | No (prompted if omitted)              |
-| `output` | Output filename (without extension) | No (prompted when merging if omitted) |
+| Argument          | Description                                        | Required                                |
+| ----------------- | -------------------------------------------------- | --------------------------------------- |
+| `url`             | Master M3U8 playlist URL                           | No (prompted if omitted)                |
+| `output`          | Output filename (without extension)                | No (prompted when merging if omitted)   |
+| `--headers`, `-H` | Path to a JSON file containing custom HTTP headers | No (uses `.env` or defaults if omitted) |
 
 ### Example
 
@@ -123,14 +130,15 @@ cp .env.example .env
 
 ### Environment Variables
 
-| Variable                   | Description                          | Default          |
-| -------------------------- | ------------------------------------ | ---------------- |
-| `MAX_CONCURRENT_DOWNLOADS` | Maximum parallel downloads           | `32`             |
-| `CHUNK_SIZE`               | Chunk size for streaming (bytes)     | `1048576` (1 MB) |
-| `TIMEOUT`                  | HTTP request timeout (seconds)       | `60`             |
-| `RETRY_COUNT`              | Number of retry attempts on failure  | `3`              |
-| `MKVMERGE_PATH`            | Path to mkvmerge binary              | `mkvmerge`       |
-| `DNS_SERVERS`              | Custom DNS servers (space-separated) | System default   |
+| Variable                   | Description                                        | Default          |
+| -------------------------- | -------------------------------------------------- | ---------------- |
+| `MAX_CONCURRENT_DOWNLOADS` | Maximum parallel downloads                         | `32`             |
+| `CHUNK_SIZE`               | Chunk size for streaming (bytes)                   | `1048576` (1 MB) |
+| `TIMEOUT`                  | HTTP request timeout (seconds)                     | `60`             |
+| `RETRY_COUNT`              | Number of retry attempts on failure                | `3`              |
+| `MKVMERGE_PATH`            | Path to mkvmerge binary                            | `mkvmerge`       |
+| `DNS_SERVERS`              | Custom DNS servers (space-separated)               | System default   |
+| `HEADERS`                  | Path to a JSON file containing custom HTTP headers | Empty (defaults) |
 
 ### Performance tuning
 
@@ -149,6 +157,38 @@ DNS_SERVERS=8.8.8.8 8.8.4.4
 # Cloudflare DNS
 DNS_SERVERS=1.1.1.1 1.0.0.1
 ```
+
+### Custom HTTP headers
+
+Some M3U8 streams require specific HTTP headers to work properly (e.g., specific `Referer`, `Origin`, or `User-Agent` values). You can provide custom headers in two ways:
+
+#### Using a JSON file (recommended)
+
+1. Copy the sample file:
+
+```bash
+cp headers.json.sample headers.json
+```
+
+2. Edit `headers.json` with your custom headers:
+
+```json
+{
+    "Accept": "*/*",
+    "Accept-Language": "fr,fr-FR;q=0.8,en-US;q=0.5,en;q=0.3",
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:146.0) Gecko/20100101 Firefox/146.0",
+    "Referer": "https://example.com",
+    "Origin": "https://example.com"
+}
+```
+
+3. Set the `HEADERS` environment variable in your `.env` file:
+
+```text
+HEADERS=headers.json
+```
+
+> **Note**: The JSON file must contain valid HTTP headers as key-value pairs. Strings should be quoted according to JSON format.
 
 ## Troubleshooting
 

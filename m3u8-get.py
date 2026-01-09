@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-__version__ = "0.2.0"
+__version__ = "0.2.1"
 """
 m3u8-get.py - Optimized asynchronous M3U8 downloader
 """
@@ -7,6 +7,7 @@ m3u8-get.py - Optimized asynchronous M3U8 downloader
 import argparse
 import asyncio
 import heapq
+import json
 import os
 import re
 import subprocess
@@ -42,8 +43,8 @@ MKVMERGE_PATH = os.getenv("MKVMERGE_PATH", "mkvmerge")  # Path to mkvmerge binar
 DNS_SERVERS_STR = os.getenv("DNS_SERVERS", "").strip()
 DNS_SERVERS = DNS_SERVERS_STR.split() if DNS_SERVERS_STR else None
 
-# HTTP headers (same as original)
-HEADERS = {
+# HTTP headers
+DEFAULT_HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:138.0) Gecko/20100101 Firefox/138.0",
     "Accept": "*/*",
     "Accept-Language": "fr,fr-FR;q=0.8,en-US;q=0.5,en;q=0.3",
@@ -57,6 +58,9 @@ HEADERS = {
     "Cache-Control": "no-cache",
 }
 
+# Will be loaded in main() via load_headers()
+HEADERS_FILE = os.getenv("HEADERS", "").strip()
+HEADERS = DEFAULT_HEADERS.copy()
 
 # ============================================================================
 # DATA CLASSES
@@ -902,6 +906,38 @@ def prompt_and_run_mkvmerge(downloaded_files: List[str], output_folder: str, fil
 # ============================================================================
 
 
+def load_headers(headers_file_arg: Optional[str] = None) -> Dict[str, str]:
+    """
+    Load HTTP headers from a file or use defaults.
+
+    Args:
+        headers_file_arg: Path to headers file from command line argument (takes priority)
+
+    Returns:
+        Dictionary of HTTP headers
+    """
+    # Priority: command line arg > environment variable > defaults
+    headers_file = None
+
+    if headers_file_arg:
+        headers_file = headers_file_arg.strip()
+    elif HEADERS_FILE:
+        headers_file = HEADERS_FILE
+
+    if headers_file:
+        if not os.path.isfile(headers_file):
+            print(f'⚠️  Headers file "{headers_file}" does not exist. Using default headers.')
+        else:
+            try:
+                with open(headers_file, "r", encoding="utf-8") as f:
+                    return json.load(f)
+            except Exception as e:
+                print(f"⚠️  Failed to load custom headers from {headers_file}: {e}")
+                print("   Using default headers.")
+
+    return DEFAULT_HEADERS.copy()
+
+
 def parse_args() -> argparse.Namespace:
     """Parse command line arguments."""
     parser = argparse.ArgumentParser(
@@ -918,18 +954,31 @@ def parse_args() -> argparse.Namespace:
         nargs="?",
         help="Output filename (without extension)",
     )
+    parser.add_argument(
+        "--headers",
+        "-H",
+        dest="headers_file",
+        help="Path to a JSON file containing custom HTTP headers",
+        metavar="FILE",
+    )
 
     return parser.parse_args()
 
 
 def main() -> None:
     """Program entry point."""
+    # Parse command line arguments first
+    args = parse_args()
+
+    # Load headers (command line arg takes priority over env var)
+    global HEADERS
+    HEADERS = load_headers(args.headers_file)
+
     # Fetch latest version before displaying banner
     latest_version = asyncio.run(get_latest_version())
 
     # Display banner
     print_banner(latest_version)
-    args = parse_args()
 
     # Get URL from argument or prompt user
     if not args.url:

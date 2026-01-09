@@ -1,0 +1,13 @@
+{
+    "Accept": "*/*",
+    "Accept-Language": "fr,fr-FR;q=0.8,en-US;q=0.5,en;q=0.3",
+    "Cache-Control": "no-cache",
+    "Connection": "keep-alive",
+    "Origin": "",
+    "Pragma": "no-cache",
+    "Referer": "",
+    "Sec-Fetch-Dest": "empty",
+    "Sec-Fetch-Mode": "cors",
+    "Sec-Fetch-Site": "cross-site",
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:146.0) Gecko/20100101 Firefox/146.0"
+}

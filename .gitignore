@@ -12,6 +12,7 @@ wheels/
 
 tmp/
 .env
+headers.json
 
 # Build
 *.build/
