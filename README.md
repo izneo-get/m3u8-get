@@ -88,6 +88,8 @@ This will:
 4. Download all selected tracks in parallel
 5. Prompt you to merge tracks with mkvmerge
 
+> **Note**: If the playlist contains no tracks (e.g., it's a single stream URL rather than a master playlist), the program will offer to download the single track from the provided URL. You can accept this offer by pressing Enter (default: Yes) or decline by typing 'n'.
+
 ## Installation
 
 ### Using uv (recommended)
