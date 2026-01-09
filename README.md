@@ -200,6 +200,8 @@ Install MKVToolNix:
 - **macOS**: `brew install mkvtoolnix`
 - **Linux**: `sudo apt install mkvtoolnix` (Debian/Ubuntu) or `sudo dnf install mkvtoolnix` (Fedora)
 
+And modify `MKVMERGE_PATH` value in your `.env` file.
+
 ### Slow downloads
 
 Increase `MAX_CONCURRENT_DOWNLOADS` in your `.env` file:
