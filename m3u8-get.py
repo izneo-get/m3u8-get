@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -*-
-__version__ = "0.2.1"
+import contextlib
+
+__version__ = "0.2.2"
 """
 m3u8-get.py - Optimized asynchronous M3U8 downloader
 """
@@ -15,7 +17,7 @@ import sys
 import time
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, BinaryIO, Callable, Dict, List, Optional, Tuple
 from urllib.parse import urljoin, urlparse
 
 import aiohttp
@@ -154,7 +156,7 @@ def print_banner(latest_version: Optional[str] = None) -> None:
         version_str += f" (version {latest_version} available)"
     print(version_str)
     print(f"{'='*60}")
-    print(f"Configuration:")
+    print("Configuration:")
     print(f"  - Parallel downloads: {MAX_CONCURRENT_DOWNLOADS}")
     print(f"  - Chunk size: {CHUNK_SIZE // 1024} KB")
     print(f"  - Timeout: {TIMEOUT}s")
@@ -170,7 +172,7 @@ async def get_latest_version() -> Optional[str]:
         Latest version string if successful, None otherwise
     """
     url = "https://raw.githubusercontent.com/izneo-get/m3u8-get/refs/heads/master/pyproject.toml"
-    try:
+    with contextlib.suppress(Exception):
         timeout = ClientTimeout(total=5)
         async with aiohttp.ClientSession(timeout=timeout) as session:
             async with session.get(url) as resp:
@@ -185,9 +187,6 @@ async def get_latest_version() -> Optional[str]:
                             # Remove quotes
                             version_part = version_part.strip('"').strip("'")
                             return version_part
-    except Exception:
-        # Silent fail on network errors
-        pass
     return None
 
 
@@ -217,7 +216,7 @@ def create_dns_resolver() -> Optional[aiohttp.AsyncResolver]:
             return resolver
         except Exception as e:
             print(f"⚠️  Failed to create custom DNS resolver: {e}")
-            print(f"   Falling back to system DNS")
+            print("   Falling back to system DNS")
             return None
     return None
 
@@ -252,7 +251,7 @@ async def parse_master_m3u(session: aiohttp.ClientSession, master_m3u_url: str) 
     media_tracks = {}
     current_header = {}
 
-    for i, line in enumerate(lines):
+    for line in lines:
         line = line.strip()
 
         # Parse EXT-X-MEDIA (audio and subtitles)
@@ -531,63 +530,61 @@ async def download_track(session: aiohttp.ClientSession, track: Track, output_fo
         write_lock: asyncio.Lock = asyncio.Lock()  # Prevents concurrent writes
         next_to_write: int = 0
 
-        # File opened once, shared with writer function
-        output_file: Any = open(output_path, "wb")
+        with open(output_path, "wb") as output_file:
+            # Cast to non-optional type for type checker
+            output_file_writer: BinaryIO = output_file
 
-        async def write_all_available() -> None:
-            """Write all consecutive segments from the heap."""
-            nonlocal next_to_write
-            # Prevent concurrent writes to file
-            async with write_lock:
-                async with heap_lock:
-                    # Write all consecutive segments that are available
-                    while segment_heap and segment_heap[0][0] == next_to_write:
-                        index: int
-                        data: bytes
-                        index, data = heapq.heappop(segment_heap)
-                        output_file.write(data)
-                        next_to_write += 1
+            async def write_all_available() -> None:
+                """Write all consecutive segments from the heap."""
+                nonlocal next_to_write
+                # Prevent concurrent writes to file
+                async with write_lock:
+                    async with heap_lock:
+                        # Write all consecutive segments that are available
+                        while segment_heap and segment_heap[0][0] == next_to_write:
+                            index: int
+                            data: bytes
+                            index, data = heapq.heappop(segment_heap)
+                            output_file_writer.write(data)
+                            next_to_write += 1
 
-        # Download coroutine - downloads and writes available segments
-        async def download_and_enqueue(url: str, index: int) -> None:
-            try:
-                data: bytes = await fetch_with_retry(session, url, semaphore)
-                async with heap_lock:
-                    heapq.heappush(segment_heap, (index, data))
-                download_progress.update(1)
-                # Try to write all available segments
+            # Download coroutine - downloads and writes available segments
+            async def download_and_enqueue(url: str, index: int) -> None:
+                try:
+                    data: bytes = await fetch_with_retry(session, url, semaphore)
+                    async with heap_lock:
+                        heapq.heappush(segment_heap, (index, data))
+                    download_progress.update(1)
+                    # Try to write all available segments
+                    await write_all_available()
+                except Exception as e:
+                    print(f"\n[ERROR] Failed to download segment {index}: {e}")
+                    # Push empty data to not block the writer
+                    async with heap_lock:
+                        heapq.heappush(segment_heap, (index, b""))
+                    download_progress.update(1)
+                    await write_all_available()
+
+            # Create progress bar for download
+            with tqdm(
+                total=total_segments,
+                desc=f"[{track.type.upper()}] {track.name}",
+                unit="seg",
+                ncols=80,
+                colour="green",
+            ) as download_progress:
+
+                # Create all download tasks
+                start_time: float = time.time()
+                download_tasks = [download_and_enqueue(url, i) for i, url in enumerate(absolute_urls)]
+
+                # Execute all download tasks in parallel
+                await asyncio.gather(*download_tasks, return_exceptions=True)
+
+                # After all downloads are done, write any remaining segments
                 await write_all_available()
-            except Exception as e:
-                print(f"\n[ERROR] Failed to download segment {index}: {e}")
-                # Push empty data to not block the writer
-                async with heap_lock:
-                    heapq.heappush(segment_heap, (index, b""))
-                download_progress.update(1)
-                await write_all_available()
 
-        # Create progress bar for download
-        with tqdm(
-            total=total_segments,
-            desc=f"[{track.type.upper()}] {track.name}",
-            unit="seg",
-            ncols=80,
-            colour="green",
-        ) as download_progress:
-
-            # Create all download tasks
-            start_time: float = time.time()
-            download_tasks = [download_and_enqueue(url, i) for i, url in enumerate(absolute_urls)]
-
-            # Execute all download tasks in parallel
-            await asyncio.gather(*download_tasks, return_exceptions=True)
-
-            # After all downloads are done, write any remaining segments
-            await write_all_available()
-
-            elapsed_time: float = time.time() - start_time
-
-        # Close the output file
-        output_file.close()
+                elapsed_time: float = time.time() - start_time
 
         # Display statistics
         file_size: float = os.path.getsize(output_path) / (1024 * 1024)  # MB
@@ -611,10 +608,9 @@ def get_track_extension(track: Track, first_segment_url: str) -> str:
     """Determine file extension for a track."""
     if track.type == "subtitle":
         return "vtt"  # WebVTT for subtitles
-    else:
-        # Extract from segment URL
-        url_ext = first_segment_url.split("?")[0].split(".")[-1]
-        return url_ext if url_ext in ("ts", "m4s", "mp4") else "ts"
+    # Extract from segment URL
+    url_ext = first_segment_url.split("?")[0].split(".")[-1]
+    return url_ext if url_ext in ("ts", "m4s", "mp4") else "ts"
 
 
 # ============================================================================
@@ -771,7 +767,7 @@ async def download_selected_tracks(selected_tracks: List[Track], output_folder: 
 
         # Step 4: Display summary
         print(f"\n{'='*60}")
-        print(f"Download completed!")
+        print("Download completed!")
         print(f"  - Tracks downloaded: {len(downloaded_files)}/{len(selected_tracks)}")
         print(f"  - Output folder: {output_folder}")
         print(f"{'='*60}")
@@ -804,9 +800,7 @@ def build_mkvmerge_command(
     output_path: str = f"{output_folder}/{output_name}.mkv"
 
     # Build mkvmerge command
-    mkvmerge_cmd: List[str] = [MKVMERGE_PATH, "-o", output_path]
-    mkvmerge_cmd.extend(downloaded_files)
-
+    mkvmerge_cmd: List[str] = [MKVMERGE_PATH, "-o", output_path, *downloaded_files]
     return mkvmerge_cmd, output_path
 
 
@@ -829,11 +823,7 @@ def sanitize_filename(filename: str) -> str:
     sanitized = re.sub(invalid_chars, "_", filename)
 
     # Remove leading/trailing spaces and dots
-    sanitized = sanitized.strip(". ")
-
-    # Ensure filename is not empty after sanitization
-    if not sanitized:
-        sanitized = "output"
+    sanitized = sanitized.strip(". ") or "output"
 
     return sanitized
 
@@ -871,24 +861,17 @@ def prompt_and_run_mkvmerge(downloaded_files: List[str], output_folder: str, fil
     print(f"\n🎬 MKVMerge command to remux tracks:")
     print(f"   {cmd_display}")
 
-    # Ask if user wants to run it (outside of async context)
-    run_mkvmerge: Optional[bool] = questionary.confirm(
-        "Would you like me to run this MKVMerge command now?", default=True
-    ).ask()
-
-    if run_mkvmerge:
+    if run_mkvmerge := questionary.confirm("Would you like me to run this MKVMerge command now?", default=True).ask():
         print(f"\n🎬 Running MKVMerge to merge tracks...\n")
         # Run synchronously
         result: subprocess.CompletedProcess[bytes] = subprocess.run(mkvmerge_cmd, check=False)
         if result.returncode == 0:
             print(f"\n✅ Merge completed: {output_path}")
 
-            # Ask if user wants to delete intermediate files
-            delete_intermediates: Optional[bool] = questionary.confirm(
-                "Would you like to delete the intermediate files?", default=True
-            ).ask()
-
-            if delete_intermediates:
+            if delete_intermediates := questionary.confirm(
+                "Would you like to delete the intermediate files?",
+                default=True,
+            ).ask():
                 print(f"\n🗑️  Deleting intermediate files...")
                 for file_path in downloaded_files:
                     try:
@@ -1026,7 +1009,7 @@ def main() -> None:
             selected_tracks = [single_track]
 
             print(f"\n🎯 Selected 1 track:")
-            print(f"   - ❔ Unknown (single track)")
+            print("   - ❔ Unknown (single track)")
         else:
             # Step 2: Interactive track selection (synchronous - questionary)
             selected_tracks: List[Track] = select_tracks_interactive(playlist)
@@ -1039,13 +1022,7 @@ def main() -> None:
             for track in selected_tracks:
                 print(f"   - {track}")
 
-        # Step 3: Download tracks (async)
-        downloaded_files: List[str] = asyncio.run(
-            download_selected_tracks(selected_tracks, output_folder, file_out_name)
-        )
-
-        # Step 4: Prompt for MKVMerge merge (synchronous)
-        if downloaded_files:
+        if downloaded_files := asyncio.run(download_selected_tracks(selected_tracks, output_folder, file_out_name)):
             prompt_and_run_mkvmerge(downloaded_files, output_folder, file_out_name)
 
     except KeyboardInterrupt:
