@@ -35,11 +35,13 @@ from tqdm.asyncio import tqdm
 load_dotenv()
 
 # Default values
+DEFAULT_OUTPUT_FOLDER = "DOWNLOADS"
 MAX_CONCURRENT_DOWNLOADS = int(os.getenv("MAX_CONCURRENT_DOWNLOADS", "32"))
 CHUNK_SIZE = int(os.getenv("CHUNK_SIZE", str(1024 * 1024)))  # 1 MB default
 TIMEOUT = int(os.getenv("TIMEOUT", "60"))  # 60 seconds default
 RETRY_COUNT = int(os.getenv("RETRY_COUNT", "3"))  # 3 attempts default
 MKVMERGE_PATH = os.getenv("MKVMERGE_PATH", "mkvmerge")  # Path to mkvmerge binary
+OUTPUT_FOLDER = os.getenv("OUTPUT_FOLDER", DEFAULT_OUTPUT_FOLDER)  # Default output folder
 
 # Custom DNS servers (space-separated)
 DNS_SERVERS_STR = os.getenv("DNS_SERVERS", "").strip()
@@ -119,12 +121,13 @@ class MasterPlaylist:
 # ============================================================================
 
 
-def print_banner(latest_version: Optional[str] = None) -> None:
+def print_banner(latest_version: Optional[str] = None, output_folder: Optional[str] = None) -> None:
     """
     Display the program banner.
 
     Args:
         latest_version: Latest version string if available, None otherwise
+        output_folder: Output folder path if available, None otherwise
     """
     print(f"\n{'='*60}")
     print(
@@ -161,6 +164,8 @@ def print_banner(latest_version: Optional[str] = None) -> None:
     print(f"  - Chunk size: {CHUNK_SIZE // 1024} KB")
     print(f"  - Timeout: {TIMEOUT}s")
     print(f"  - Retry count: {RETRY_COUNT}")
+    if output_folder:
+        print(f"  - Output folder: {output_folder}")
     print(f"{'='*60}\n")
 
 
@@ -952,6 +957,13 @@ def parse_args() -> argparse.Namespace:
         help="Path to a JSON file containing custom HTTP headers",
         metavar="FILE",
     )
+    parser.add_argument(
+        "--output-folder",
+        "-o",
+        dest="output_folder",
+        help=f"Output folder path (default: {DEFAULT_OUTPUT_FOLDER})",
+        metavar="DIR",
+    )
 
     return parser.parse_args()
 
@@ -968,8 +980,23 @@ def main() -> None:
     # Fetch latest version before displaying banner
     latest_version = asyncio.run(get_latest_version())
 
-    # Display banner
-    print_banner(latest_version)
+    # Get output filename from argument or leave empty for later prompt
+    file_out_name: str = sanitize_filename(args.output) if args.output else ""
+
+    # Determine output folder: CLI arg > env var > default
+    # If path is relative, make it relative to script directory
+    folder_arg = args.output_folder or OUTPUT_FOLDER
+    if os.path.isabs(folder_arg):
+        output_folder: str = folder_arg
+    else:
+        output_folder = f"{os.path.dirname(os.path.abspath(sys.argv[0]))}/{folder_arg}"
+
+    # Create output folder if necessary
+    if not os.path.exists(output_folder):
+        os.mkdir(output_folder)
+
+    # Display banner (now with output folder information)
+    print_banner(latest_version, output_folder)
 
     # Get URL from argument or prompt user
     if not args.url:
@@ -982,14 +1009,6 @@ def main() -> None:
             sys.exit(1)
     else:
         master_m3u_url = args.url
-
-    # Get output filename from argument or leave empty for later prompt
-    file_out_name: str = sanitize_filename(args.output) if args.output else ""
-
-    # Create tmp folder if necessary
-    output_folder: str = f"{os.path.dirname(os.path.abspath(sys.argv[0]))}/tmp"
-    if not os.path.exists(output_folder):
-        os.mkdir(output_folder)
 
     try:
         # Step 1: Fetch and parse playlist (async)

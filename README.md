@@ -58,28 +58,35 @@ The program will prompt you for:
 ### Basic usage
 
 ```bash
-uv run python m3u8-get.py <MASTER_M3U_URL>
+uv run m3u8-get.py <MASTER_M3U_URL>
 ```
 
 ### With Custom Output Name
 
 ```bash
-uv run python m3u8-get.py <MASTER_M3U_URL> <OUTPUT_NAME>
+uv run m3u8-get.py <MASTER_M3U_URL> <OUTPUT_NAME>
 ```
 
 ### With custom headers
 
 ```bash
-uv run python m3u8-get.py <MASTER_M3U_URL> <OUTPUT_NAME> --headers path/to/headers.json
+uv run m3u8-get.py <MASTER_M3U_URL> <OUTPUT_NAME> --headers path/to/headers.json
+```
+
+### With custom output folder
+
+```bash
+uv run m3u8-get.py <MASTER_M3U_URL> <OUTPUT_NAME> --output-folder path/to/folder
 ```
 
 ### Command-Line Arguments
 
-| Argument          | Description                                        | Required                                |
-| ----------------- | -------------------------------------------------- | --------------------------------------- |
-| `url`             | Master M3U8 playlist URL                           | No (prompted if omitted)                |
-| `output`          | Output filename (without extension)                | No (prompted when merging if omitted)   |
-| `--headers`, `-H` | Path to a JSON file containing custom HTTP headers | No (uses `.env` or defaults if omitted) |
+| Argument                | Description                                        | Required                                   |
+| ----------------------- | -------------------------------------------------- | ------------------------------------------ |
+| `url`                   | Master M3U8 playlist URL                           | No (prompted if omitted)                   |
+| `output`                | Output filename (without extension)                | No (prompted when merging if omitted)      |
+| `--headers`, `-H`       | Path to a JSON file containing custom HTTP headers | No (uses `.env` or defaults if omitted)    |
+| `--output-folder`, `-o` | Output folder path                                 | No (uses `.env` or "DOWNLOADS" if omitted) |
 
 ### Example
 
@@ -130,15 +137,16 @@ cp .env.example .env
 
 ### Environment Variables
 
-| Variable                   | Description                                        | Default          |
-| -------------------------- | -------------------------------------------------- | ---------------- |
-| `MAX_CONCURRENT_DOWNLOADS` | Maximum parallel downloads                         | `32`             |
-| `CHUNK_SIZE`               | Chunk size for streaming (bytes)                   | `1048576` (1 MB) |
-| `TIMEOUT`                  | HTTP request timeout (seconds)                     | `60`             |
-| `RETRY_COUNT`              | Number of retry attempts on failure                | `3`              |
-| `MKVMERGE_PATH`            | Path to mkvmerge binary                            | `mkvmerge`       |
-| `DNS_SERVERS`              | Custom DNS servers (space-separated)               | System default   |
-| `HEADERS`                  | Path to a JSON file containing custom HTTP headers | Empty (defaults) |
+| Variable                   | Description                                         | Default          |
+| -------------------------- | --------------------------------------------------- | ---------------- |
+| `MAX_CONCURRENT_DOWNLOADS` | Maximum parallel downloads                          | `32`             |
+| `CHUNK_SIZE`               | Chunk size for streaming (bytes)                    | `1048576` (1 MB) |
+| `TIMEOUT`                  | HTTP request timeout (seconds)                      | `60`             |
+| `RETRY_COUNT`              | Number of retry attempts on failure                 | `3`              |
+| `MKVMERGE_PATH`            | Path to mkvmerge binary                             | `mkvmerge`       |
+| `DNS_SERVERS`              | Custom DNS servers (space-separated)                | System default   |
+| `HEADERS`                  | Path to a JSON file containing custom HTTP headers  | Empty (defaults) |
+| `OUTPUT_FOLDER`            | Output folder path (absolute or relative to script) | `DOWNLOADS`      |
 
 ### Performance tuning
 
