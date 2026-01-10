@@ -4,6 +4,7 @@
 
 - [NEW] Configure output directory.
 - [NEW] Check M3U file validity.
+- [CHANGE] Code refacto.
 
 ## v0.2.2 (2026-01-09)
 

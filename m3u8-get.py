@@ -1,5 +1,4 @@
 # -*- coding: utf-8 -*-
-import contextlib
 
 __version__ = "0.2.3"
 """
@@ -8,6 +7,7 @@ m3u8-get.py - Optimized asynchronous M3U8 downloader
 
 import argparse
 import asyncio
+import contextlib
 import heapq
 import json
 import os
@@ -155,9 +155,13 @@ def print_banner(latest_version: Optional[str] = None, output_folder: Optional[s
         pass
     elif latest_version == __version__:
         version_str += " (latest version)"
+        print(version_str)
     else:
         version_str += f" (version {latest_version} available)"
-    print(version_str)
+        print(version_str)
+        print("Run: `git pull` to update to the latest version.")
+        print("Or check: https://github.com/izneo-get/m3u8-get/releases")
+
     print(f"{'='*60}")
     print("Configuration:")
     print(f"  - Parallel downloads: {MAX_CONCURRENT_DOWNLOADS}")
@@ -236,6 +240,210 @@ def is_valid_m3u(content: str) -> bool:
     return "#EXTM3U" in content
 
 
+def _get_base_url(url: str) -> str:
+    """
+    Extract the base URL from a full URL.
+
+    Args:
+        url: Full URL to a file or playlist
+
+    Returns:
+        Base URL (directory path) with trailing slash
+    """
+    return "/".join(url.split("/")[:-1]) + "/"
+
+
+def _normalize_url(url: str, base_url: str) -> str:
+    """
+    Convert a relative URL to an absolute URL.
+
+    Args:
+        url: URL to normalize (can be relative or absolute)
+        base_url: Base URL to use for relative URLs
+
+    Returns:
+        Absolute URL
+    """
+    return url if url.startswith("http") else urljoin(base_url, url)
+
+
+async def _download_playlist_content(session: aiohttp.ClientSession, url: str) -> str:
+    """
+    Download and validate M3U8 playlist content.
+
+    Args:
+        session: aiohttp session
+        url: URL of the M3U8 playlist
+
+    Returns:
+        Playlist content as string
+
+    Raises:
+        ValueError: If the content is not a valid M3U8 playlist
+    """
+    timeout = ClientTimeout(total=TIMEOUT)
+    async with session.get(url, headers=HEADERS, timeout=timeout) as resp:
+        content = await resp.text()
+
+    if not is_valid_m3u(content):
+        raise ValueError("The provided URL does not point to a valid M3U8 playlist.")
+
+    return content
+
+
+def _parse_ext_x_media(lines: List[str], base_url: str) -> Dict[str, List[Track]]:
+    """
+    Parse EXT-X-MEDIA tags from M3U8 content.
+
+    These tags define audio and subtitle tracks.
+
+    Args:
+        lines: List of M3U8 content lines (stripped)
+        base_url: Base URL for converting relative URLs to absolute
+
+    Returns:
+        Dictionary mapping group IDs to lists of Tracks
+    """
+    media_tracks: Dict[str, List[Track]] = {}
+
+    for line in lines:
+        line = line.strip()
+
+        if line.startswith("#EXT-X-MEDIA:"):
+            attrs = parse_m3u_attributes(line)
+
+            track_type = attrs.get("TYPE", "").lower()
+            if track_type not in ("audio", "subtitles"):
+                continue
+
+            track = Track(
+                type="audio" if track_type == "audio" else "subtitle",
+                name=attrs.get("NAME", "Unknown"),
+                language=attrs.get("LANGUAGE", attrs.get("NAME", "")),
+                group_id=attrs.get("GROUP-ID", ""),
+                url=attrs.get("URI", ""),
+                channels=attrs.get("CHANNELS", ""),
+                is_default=attrs.get("DEFAULT", "NO") == "YES",
+                codec=attrs.get("CODECS", ""),
+            )
+
+            group_id = attrs.get("GROUP-ID", "")
+            if group_id:
+                if group_id not in media_tracks:
+                    media_tracks[group_id] = []
+                media_tracks[group_id].append(track)
+
+    return media_tracks
+
+
+def _create_video_track(attrs: Dict[str, str], url: str, index: int) -> Track:
+    """
+    Create a video track from EXT-X-STREAM-INF attributes.
+
+    Args:
+        attrs: Parsed M3U8 attributes from the tag
+        url: Absolute URL to the video stream
+        index: Stream index for identification
+
+    Returns:
+        Configured video Track object
+    """
+    return Track(
+        type="video",
+        name=f"Stream {index + 1}",
+        resolution=attrs.get("RESOLUTION", ""),
+        bandwidth=int(attrs.get("BANDWIDTH") or "0"),
+        codec=attrs.get("CODECS", ""),
+        url=url,
+        index=index,
+    )
+
+
+def _add_associated_media_tracks(
+    group_id: str,
+    media_tracks: Dict[str, List[Track]],
+    playlist: MasterPlaylist,
+) -> None:
+    """
+    Add associated media tracks (audio/subtitles) to the playlist.
+
+    Args:
+        group_id: Group ID to look up in media_tracks
+        media_tracks: Dictionary of media tracks by group ID
+        playlist: MasterPlaylist to populate with tracks
+    """
+    if not group_id or group_id not in media_tracks:
+        return
+
+    for track in media_tracks[group_id]:
+        # Normalize URL and update the track
+        track.url = _normalize_url(track.url, playlist.base_url)
+        # Add to playlist if not already present
+        if track not in playlist.tracks:
+            playlist.tracks.append(track)
+
+
+def _parse_ext_x_stream_inf(lines: List[str], media_tracks: Dict[str, List[Track]], playlist: MasterPlaylist) -> None:
+    """
+    Parse EXT-X-STREAM-INF tags from M3U8 content.
+
+    These tags define video streams and reference audio/subtitle groups.
+
+    Args:
+        lines: List of M3U8 content lines (stripped)
+        media_tracks: Dictionary of media tracks by group ID
+        playlist: MasterPlaylist to populate with parsed tracks
+    """
+    video_index = 0
+
+    for i, line in enumerate(lines):
+        line = line.strip()
+
+        if not line.startswith("#EXT-X-STREAM-INF:"):
+            continue
+
+        attrs = parse_m3u_attributes(line)
+
+        # Next line should be the URL
+        if i + 1 >= len(lines):
+            continue
+
+        url = lines[i + 1].strip()
+        if not url or url.startswith("#"):
+            continue
+
+        # Normalize URL
+        url = _normalize_url(url, playlist.base_url)
+
+        # Create and add video track
+        video_track = _create_video_track(attrs, url, video_index)
+        playlist.tracks.append(video_track)
+
+        # Add associated audio and subtitle tracks
+        audio_group = attrs.get("AUDIO", "")
+        subs_group = attrs.get("SUBTITLES", "")
+
+        _add_associated_media_tracks(audio_group, media_tracks, playlist)
+        _add_associated_media_tracks(subs_group, media_tracks, playlist)
+
+        video_index += 1
+
+
+def _handle_standalone_media_tracks(media_tracks: Dict[str, List[Track]], playlist: MasterPlaylist) -> None:
+    """
+    Handle standalone media tracks when no video streams are present.
+
+    Args:
+        media_tracks: Dictionary of media tracks by group ID
+        playlist: MasterPlaylist to populate with tracks
+    """
+    for group_tracks in media_tracks.values():
+        for track in group_tracks:
+            track.url = _normalize_url(track.url, playlist.base_url)
+            if track not in playlist.tracks:
+                playlist.tracks.append(track)
+
+
 async def parse_master_m3u(session: aiohttp.ClientSession, master_m3u_url: str) -> MasterPlaylist:
     """
     Parse a master M3U8 playlist and extract all tracks.
@@ -247,118 +455,25 @@ async def parse_master_m3u(session: aiohttp.ClientSession, master_m3u_url: str) 
     Returns:
         MasterPlaylist object with all tracks
     """
-    timeout = ClientTimeout(total=TIMEOUT)
-    async with session.get(master_m3u_url, headers=HEADERS, timeout=timeout) as resp:
-        content = await resp.text()
+    # Download and validate playlist content
+    content = await _download_playlist_content(session, master_m3u_url)
 
-    if not is_valid_m3u(content):
-        raise ValueError("The provided URL does not point to a valid M3U8 playlist.")
-
+    # Initialize playlist with base URL
     playlist = MasterPlaylist()
-    playlist.base_url = "/".join(master_m3u_url.split("/")[:-1]) + "/"
+    playlist.base_url = _get_base_url(master_m3u_url)
 
+    # Split content into lines
     lines = content.split("\n")
-    i = 0
 
-    # First pass: collect all EXT-X-MEDIA entries (audio and subtitles)
-    media_tracks = {}
-    current_header = {}
+    # Parse EXT-X-MEDIA tags (audio and subtitles)
+    media_tracks = _parse_ext_x_media(lines, playlist.base_url)
 
-    for line in lines:
-        line = line.strip()
+    # Parse EXT-X-STREAM-INF tags (video streams)
+    _parse_ext_x_stream_inf(lines, media_tracks, playlist)
 
-        # Parse EXT-X-MEDIA (audio and subtitles)
-        if line.startswith("#EXT-X-MEDIA:"):
-            attrs = parse_m3u_attributes(line)
-
-            track_type = attrs.get("TYPE", "").lower()
-            if track_type in ("audio", "subtitles"):
-                track = Track(
-                    type="audio" if track_type == "audio" else "subtitle",
-                    name=attrs.get("NAME", "Unknown"),
-                    language=attrs.get("LANGUAGE", attrs.get("NAME", "")),
-                    group_id=attrs.get("GROUP-ID", ""),
-                    url=attrs.get("URI", ""),
-                    channels=attrs.get("CHANNELS", ""),
-                    is_default=attrs.get("DEFAULT", "NO") == "YES",
-                    codec=attrs.get("CODECS", ""),
-                )
-
-                # Store with GROUP-ID as key for reference by video streams
-                group_id = attrs.get("GROUP-ID", "")
-                if group_id:
-                    if group_id not in media_tracks:
-                        media_tracks[group_id] = []
-                    media_tracks[group_id].append(track)
-
-    # Second pass: parse EXT-X-STREAM-INF (video tracks)
-    video_index = 0
-    for i, line in enumerate(lines):
-        line = line.strip()
-
-        if line.startswith("#EXT-X-STREAM-INF:"):
-            attrs = parse_m3u_attributes(line)
-
-            # Next line should be the URL
-            if i + 1 < len(lines):
-                url = lines[i + 1].strip()
-                if not url or url.startswith("#"):
-                    continue
-
-                # Convert to absolute URL if needed
-                if not url.startswith("http"):
-                    url = urljoin(playlist.base_url, url)
-
-                resolution = attrs.get("RESOLUTION", "")
-                bandwidth = int(attrs.get("BANDWIDTH") or "0")
-                codecs = attrs.get("CODECS", "")
-                audio_group = attrs.get("AUDIO", "")
-                subs_group = attrs.get("SUBTITLES", "")
-
-                # Create video track
-                video_track = Track(
-                    type="video",
-                    name=f"Stream {video_index + 1}",
-                    resolution=resolution,
-                    bandwidth=bandwidth,
-                    codec=codecs,
-                    url=url,
-                    index=video_index,
-                )
-                playlist.tracks.append(video_track)
-
-                # Add associated audio tracks
-                if audio_group and audio_group in media_tracks:
-                    for audio_track in media_tracks[audio_group]:
-                        # Convert to absolute URL if needed
-                        audio_url = audio_track.url
-                        if audio_url and not audio_url.startswith("http"):
-                            audio_url = urljoin(playlist.base_url, audio_url)
-                        audio_track.url = audio_url
-                        if audio_track not in playlist.tracks:
-                            playlist.tracks.append(audio_track)
-
-                # Add associated subtitle tracks
-                if subs_group and subs_group in media_tracks:
-                    for sub_track in media_tracks[subs_group]:
-                        # Convert to absolute URL if needed
-                        sub_url = sub_track.url
-                        if sub_url and not sub_url.startswith("http"):
-                            sub_url = urljoin(playlist.base_url, sub_url)
-                        sub_track.url = sub_url
-                        if sub_track not in playlist.tracks:
-                            playlist.tracks.append(sub_track)
-
-                video_index += 1
-
-    # If no video streams found, check for standalone media tracks
-    if video_index == 0 and media_tracks:
-        for group_tracks in media_tracks.values():
-            for track in group_tracks:
-                if track.url and not track.url.startswith("http"):
-                    track.url = urljoin(playlist.base_url, track.url)
-                if track not in playlist.tracks:
-                    playlist.tracks.append(track)
+    # Handle standalone media tracks (when no video streams present)
+    if not playlist.get_tracks_by_type("video"):
+        _handle_standalone_media_tracks(media_tracks, playlist)
 
     return playlist
 
