@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 import contextlib
 
-__version__ = "0.2.2"
+__version__ = "0.2.3"
 """
 m3u8-get.py - Optimized asynchronous M3U8 downloader
 """
@@ -226,6 +226,11 @@ def create_dns_resolver() -> Optional[aiohttp.AsyncResolver]:
 # ============================================================================
 
 
+def is_valid_m3u(content: str) -> bool:
+    """Check if content is a valid M3U8 playlist."""
+    return "#EXTM3U" in content
+
+
 async def parse_master_m3u(session: aiohttp.ClientSession, master_m3u_url: str) -> MasterPlaylist:
     """
     Parse a master M3U8 playlist and extract all tracks.
@@ -240,6 +245,9 @@ async def parse_master_m3u(session: aiohttp.ClientSession, master_m3u_url: str) 
     timeout = ClientTimeout(total=TIMEOUT)
     async with session.get(master_m3u_url, headers=HEADERS, timeout=timeout) as resp:
         content = await resp.text()
+
+    if not is_valid_m3u(content):
+        raise ValueError("The provided URL does not point to a valid M3U8 playlist.")
 
     playlist = MasterPlaylist()
     playlist.base_url = "/".join(master_m3u_url.split("/")[:-1]) + "/"
@@ -1024,12 +1032,14 @@ def main() -> None:
 
         if downloaded_files := asyncio.run(download_selected_tracks(selected_tracks, output_folder, file_out_name)):
             prompt_and_run_mkvmerge(downloaded_files, output_folder, file_out_name)
-
+    except ValueError as ve:
+        print(f"\n⚠️  {ve}")
+        sys.exit(1)
     except KeyboardInterrupt:
         print("\n\nDownload cancelled by user.")
         sys.exit(1)
     except Exception as e:
-        print(f"\n[ERROR] An error occurred: {e}")
+        print(f"\n⚠️   An error occurred: {e}")
         import traceback
 
         traceback.print_exc()

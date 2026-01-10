@@ -117,7 +117,7 @@ uv sync
 ## Build
 
 ```bash
-uv run python -m nuitka --standalone --onefile --follow-imports --windows-icon-from-ico="./resources/icon.ico" --windows-console-mode=disable m3u8-get.py
+uv run python -m nuitka --standalone --onefile --follow-imports --windows-icon-from-ico="./resources/icon.ico" m3u8-get.py
 ```
 
 ## Configuration
