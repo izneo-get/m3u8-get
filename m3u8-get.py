@@ -1,11 +1,12 @@
 # -*- coding: utf-8 -*-
 
-__version__ = "0.2.3"
+__version__ = "0.2.4"
 """
 m3u8-get.py - Optimized asynchronous M3U8 downloader
 """
 
 import argparse
+import ast
 import asyncio
 import contextlib
 import heapq
@@ -1045,7 +1046,22 @@ def load_headers(headers_file_arg: Optional[str] = None) -> Dict[str, str]:
         else:
             try:
                 with open(headers_file, "r", encoding="utf-8") as f:
-                    return json.load(f)
+                    content = f.read().strip()
+                    
+                # Try parsing as JSON first
+                try:
+                    return json.loads(content)
+                except json.JSONDecodeError:
+                    # Fallback to Python dictionary syntax
+                    try:
+                        headers = ast.literal_eval(content)
+                        if isinstance(headers, dict):
+                            return headers
+                        else:
+                            print(f"⚠️  Content in {headers_file} is not a valid dictionary.")
+                    except (ValueError, SyntaxError):
+                        print(f"⚠️  Failed to parse {headers_file} as JSON or Python dictionary.")
+                        
             except Exception as e:
                 print(f"⚠️  Failed to load custom headers from {headers_file}: {e}")
                 print("   Using default headers.")

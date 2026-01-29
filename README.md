@@ -224,6 +224,18 @@ MAX_CONCURRENT_DOWNLOADS=64
 - Increase `TIMEOUT` and `RETRY_COUNT` in `.env`
 - Some M3U8 playlists may require specific headers (edit `HEADERS` in the script)
 
+### How to get headers in JSON format
+
+If you get `HTTP 403 Forbidden` errors, you likely need valid headers (User-Agent, Referer, Cookie).
+
+1. **Open Developer Tools** (`F12`) on the video page and go to the **Network** tab.
+2. Play the video and look for the `.m3u8` request.
+3. Right-click the request select **Copy** > **Copy as cURL**.
+4. Go to [curlconverter.com](https://curlconverter.com/).
+5. Paste the cURL command in the "curl command" box.
+6. Copy the content from the **JSON** (or **Python**) tab.
+7. Paste it into your `headers.json` file.
+
 ## License
 
 This project is provided as-is for educational purposes.
