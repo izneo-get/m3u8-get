@@ -18,3 +18,5 @@ headers.json
 *.build/
 *.dist/
 *.onefile-build/
+
+DOWNLOADS/

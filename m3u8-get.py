@@ -992,24 +992,28 @@ def prompt_and_run_mkvmerge(downloaded_files: List[str], output_folder: str, fil
     if run_mkvmerge := questionary.confirm("Would you like me to run this MKVMerge command now?", default=True).ask():
         print(f"\n🎬 Running MKVMerge to merge tracks...\n")
         # Run synchronously
-        result: subprocess.CompletedProcess[bytes] = subprocess.run(mkvmerge_cmd, check=False)
-        if result.returncode == 0:
-            print(f"\n✅ Merge completed: {output_path}")
+        try:
+            result: subprocess.CompletedProcess[bytes] = subprocess.run(mkvmerge_cmd, check=False)
+            if result.returncode == 0:
+                print(f"\n✅ Merge completed: {output_path}")
 
-            if delete_intermediates := questionary.confirm(
-                "Would you like to delete the intermediate files?",
-                default=True,
-            ).ask():
-                print(f"\n🗑️  Deleting intermediate files...")
-                for file_path in downloaded_files:
-                    try:
-                        os.remove(file_path)
-                        print(f"   - Deleted: {file_path}")
-                    except OSError as e:
-                        print(f"   - Failed to delete {file_path}: {e}")
-                print("✅ Cleanup completed!")
-        else:
-            print(f"\n⚠️  MKVMerge exited with code {result.returncode}")
+                if delete_intermediates := questionary.confirm(
+                    "Would you like to delete the intermediate files?",
+                    default=True,
+                ).ask():
+                    print(f"\n🗑️  Deleting intermediate files...")
+                    for file_path in downloaded_files:
+                        try:
+                            os.remove(file_path)
+                            print(f"   - Deleted: {file_path}")
+                        except OSError as e:
+                            print(f"   - Failed to delete {file_path}: {e}")
+                    print("✅ Cleanup completed!")
+            else:
+                print(f"\n⚠️  MKVMerge exited with code {result.returncode}")
+        except FileNotFoundError:
+            print(f"\n❌ Error: '{MKVMERGE_PATH}' not found (is it installed and in your PATH?)")
+            print(f"👉 You can run the command manually:\n\n   {cmd_display}\n")
 
 
 # ============================================================================
